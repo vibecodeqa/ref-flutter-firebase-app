@@ -1,0 +1,39 @@
+{
+  "$comment": [
+    "Every composite Firestore query this workspace issues, declared once.",
+    "",
+    "Firestore fails a composite query at runtime when no matching index exists, and the",
+    "emulator does not enforce indexes, so an untested query can pass CI and 500 in",
+    "production. `scripts/check-firestore-indexes.mjs` cross-checks this file against",
+    "firestore.indexes.json and against the source file that issues the query, and fails",
+    "CI when they drift.",
+    "",
+    "This is a declaration-based check, not automatic query extraction: adding a new",
+    "composite query without adding it here will not be detected. That limitation is",
+    "recorded in docs/vcqa-report.md."
+  ],
+  "queries": [
+    {
+      "id": "app-own-notes",
+      "description": "The end-user app lists the signed-in user's own notes, newest first.",
+      "collectionGroup": "notes",
+      "queryScope": "COLLECTION",
+      "source": "packages/app/lib/note_service.dart",
+      "fields": [
+        { "fieldPath": "ownerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "id": "admin-moderation-queue",
+      "description": "The admin console lists notes awaiting review, oldest first.",
+      "collectionGroup": "notes",
+      "queryScope": "COLLECTION",
+      "source": "packages/admin/lib/moderation_service.dart",
+      "fields": [
+        { "fieldPath": "reviewState", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+name: reference_flutter_firebase_app_workspace
+description: "Melos workspace root for the flutter-firebase-app reference implementation. Not a shipped package."
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ^3.11.5
+
+dev_dependencies:
+  # Melos 6.x is the last line that reads `melos.yaml`. See README > Why Melos 6.
+  melos: ^6.3.2

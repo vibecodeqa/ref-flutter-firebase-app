@@ -1,0 +1,28 @@
+{
+  "//": [
+    "Environment separation lives here. Three named aliases, three distinct Firebase",
+    "projects, selected with `firebase use <alias>` or `--project <alias>`.",
+    "",
+    "`dev` points at a `demo-` project id, which the Firebase emulator suite treats as",
+    "an offline project: nothing in this repo can reach a real backend by accident.",
+    "`staging` and `prod` are intentionally placeholders in this reference repo — see",
+    "README > 'This repo never deploys'. Replace them in a real fork.",
+    "",
+    "The hosting targets keep the end-user app and the admin console on separate sites",
+    "so they can be deployed, rolled back and access-controlled independently."
+  ],
+  "projects": {
+    "default": "demo-reference-flutter-firebase",
+    "dev": "demo-reference-flutter-firebase",
+    "staging": "REPLACE-WITH-STAGING-PROJECT-ID",
+    "prod": "REPLACE-WITH-PRODUCTION-PROJECT-ID"
+  },
+  "targets": {
+    "demo-reference-flutter-firebase": {
+      "hosting": {
+        "app": ["demo-reference-flutter-firebase"],
+        "admin": ["demo-reference-flutter-firebase-admin"]
+      }
+    }
+  }
+}

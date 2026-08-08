@@ -1,0 +1,58 @@
+name: reference_flutter_firebase_app
+
+# `packages/*` picks up every Dart/Flutter package in the workspace.
+# `packages/functions` is a Node 22 Cloud Functions package with no pubspec.yaml,
+# so Melos ignores it: it is orchestrated by npm and by CI, not by Melos.
+packages:
+  - packages/*
+
+scripts:
+  analyze:
+    run: flutter analyze --fatal-infos
+    description: Static analysis across every Flutter/Dart package in the workspace.
+    exec:
+      concurrency: 1
+      failFast: true
+
+  format:check:
+    run: dart format --output=none --set-exit-if-changed .
+    description: Fail if any Dart source in any package is unformatted.
+    exec:
+      concurrency: 1
+      failFast: true
+
+  test:
+    run: flutter test
+    description: Run tests in every package that has a test/ directory.
+    exec:
+      concurrency: 1
+      failFast: true
+    packageFilters:
+      dirExists: test
+
+  test:app:
+    run: flutter test
+    description: Run the end-user app package tests only.
+    exec:
+      concurrency: 1
+      failFast: true
+    packageFilters:
+      scope: reference_app
+
+  test:admin:
+    run: flutter test
+    description: Run the admin console package tests only.
+    exec:
+      concurrency: 1
+      failFast: true
+    packageFilters:
+      scope: reference_admin
+
+  test:shared:
+    run: flutter test
+    description: Run the shared Dart package tests only.
+    exec:
+      concurrency: 1
+      failFast: true
+    packageFilters:
+      scope: reference_shared

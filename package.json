@@ -1,0 +1,27 @@
+{
+  "name": "ref-flutter-firebase-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Workspace-level tooling for the flutter-firebase-app reference implementation: Firestore rules tests, index checks, secret checks and deploy-shape checks.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test:rules": "vitest run --dir firestore-tests",
+    "test:rules:emulated": "firebase emulators:exec --only firestore --project demo-rules-test \"npm run test:rules\"",
+    "check:secrets": "node scripts/check-no-secrets.mjs",
+    "check:indexes": "node scripts/check-firestore-indexes.mjs",
+    "check:deploy-shape": "node scripts/check-deploy-shape.mjs",
+    "check": "npm run check:secrets && npm run check:indexes && npm run check:deploy-shape",
+    "emulators": "firebase emulators:start --only auth,firestore,functions,hosting --project demo-reference-flutter-firebase"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "firebase": "^12.4.0",
+    "firebase-tools": "^14.19.0",
+    "vitest": "^3.2.0",
+    "yaml": "^2.8.0"
+  }
+}

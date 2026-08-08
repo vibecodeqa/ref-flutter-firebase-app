@@ -1,0 +1,246 @@
+name: CI
+
+# Every job below is a required gate. None of them uses `continue-on-error`, and
+# there are no reporting-only jobs in this workflow. If a non-blocking dashboard
+# job is ever added it must be named `report-*` and say so — see
+# scripts/check-deploy-shape.mjs, which enforces that convention.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned so build evidence is real: this is the version the repo was
+  # developed and verified against.
+  FLUTTER_VERSION: 3.41.8
+  FLUTTER_CHANNEL: stable
+  # Cloud Functions runtime is nodejs22 (see firebase.json); CI matches it.
+  NODE_VERSION: 22
+  MELOS_VERSION: 6.3.2
+
+jobs:
+  static-checks:
+    name: Static checks (secrets, indexes, deploy shape)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install workspace tooling
+        run: npm ci
+      - name: No server credentials are committed
+        run: npm run check:secrets
+      - name: Firestore indexes match declared composite queries
+        run: npm run check:indexes
+      - name: Deploy workflow shape is gated and credential-free
+        run: npm run check:deploy-shape
+
+  flutter-workspace:
+    name: Melos bootstrap, analyze, format, package tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+      - name: Record the toolchain that ran this job
+        run: |
+          flutter --version
+          dart --version
+      - name: Install Melos ${{ env.MELOS_VERSION }}
+        run: |
+          dart pub global activate melos ${{ env.MELOS_VERSION }}
+          echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+      - name: Resolve the workspace root
+        run: dart pub get
+      - name: melos bootstrap
+        run: melos bootstrap
+      - name: flutter analyze (whole workspace, --fatal-infos)
+        run: melos run analyze --no-select
+      - name: dart format check (whole workspace)
+        run: melos run format:check --no-select
+      - name: shared package tests
+        run: melos run test:shared --no-select
+      - name: app tests
+        run: melos run test:app --no-select
+      - name: admin tests
+        run: melos run test:admin --no-select
+
+  functions:
+    name: Cloud Functions (Node 22) install, typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: packages/functions
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: packages/functions/package-lock.json
+      - name: Install (locked)
+        run: npm ci
+      - name: Typecheck (including tests)
+        run: npm run typecheck
+      - name: Unit tests for the trust boundary
+        run: npm test
+      - name: Build the deployable bundle
+        run: npm run build
+
+  firestore-rules:
+    name: Firestore rules tests (emulator-backed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      # The Firestore emulator is a Java process. Without a JDK this job fails
+      # with a confusing "emulator exited" error rather than a missing-java one.
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install workspace tooling
+        run: npm ci
+      - name: Run rules unit tests inside the Firestore emulator
+        run: npm run test:rules:emulated
+
+  web-build:
+    name: Flutter web build + build evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install Melos ${{ env.MELOS_VERSION }}
+        run: |
+          dart pub global activate melos ${{ env.MELOS_VERSION }}
+          echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+      - name: melos bootstrap
+        run: |
+          dart pub get
+          melos bootstrap
+      - name: Build the end-user app for web
+        working-directory: packages/app
+        run: |
+          flutter build web --release \
+            --dart-define=FIREBASE_ENV=dev \
+            --dart-define=FIREBASE_USE_EMULATORS=false \
+            --dart-define=FIREBASE_PROJECT_ID=demo-reference-flutter-firebase
+      - name: Build the admin console for web
+        working-directory: packages/admin
+        run: |
+          flutter build web --release \
+            --dart-define=FIREBASE_ENV=dev \
+            --dart-define=FIREBASE_USE_EMULATORS=false \
+            --dart-define=FIREBASE_PROJECT_ID=demo-reference-flutter-firebase
+      - name: Record build evidence for the app bundle
+        run: |
+          node scripts/build-evidence.mjs \
+            --target web-app \
+            --artifact packages/app/build/web \
+            --define FIREBASE_ENV=dev \
+            --define FIREBASE_USE_EMULATORS=false \
+            --define FIREBASE_PROJECT_ID=demo-reference-flutter-firebase \
+            --android-manifest packages/app/android/app/src/main/AndroidManifest.xml \
+            --ios-plist packages/app/ios/Runner/Info.plist
+      - name: Record build evidence for the admin bundle
+        run: |
+          node scripts/build-evidence.mjs \
+            --target web-admin \
+            --artifact packages/admin/build/web \
+            --define FIREBASE_ENV=dev \
+            --define FIREBASE_USE_EMULATORS=false \
+            --define FIREBASE_PROJECT_ID=demo-reference-flutter-firebase
+      - name: No server credentials leaked into the web bundles
+        run: |
+          node scripts/check-bundle-secrets.mjs \
+            packages/app/build/web packages/admin/build/web
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-evidence
+          path: build-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+  android-build-shape:
+    name: Android build-shape check (debug APK compile + manifest evidence)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install Melos ${{ env.MELOS_VERSION }}
+        run: |
+          dart pub global activate melos ${{ env.MELOS_VERSION }}
+          echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+      - name: melos bootstrap
+        run: |
+          dart pub get
+          melos bootstrap
+      # This is a DEBUG compile. It proves the Android toolchain, Gradle config,
+      # plugin registration and manifest merge all work. It deliberately proves
+      # NOTHING about release signing, shrinking or store upload: this repo holds
+      # no keystore, by design. See README > "What the mobile check proves".
+      - name: Compile a debug APK
+        working-directory: packages/app
+        run: |
+          flutter build apk --debug \
+            --dart-define=FIREBASE_ENV=dev \
+            --dart-define=FIREBASE_USE_EMULATORS=false \
+            --dart-define=FIREBASE_PROJECT_ID=demo-reference-flutter-firebase
+      - name: Record Android build evidence (permissions + artifact hash)
+        run: |
+          node scripts/build-evidence.mjs \
+            --target android-debug \
+            --artifact packages/app/build/app/outputs/flutter-apk/app-debug.apk \
+            --define FIREBASE_ENV=dev \
+            --define FIREBASE_USE_EMULATORS=false \
+            --define FIREBASE_PROJECT_ID=demo-reference-flutter-firebase \
+            --android-manifest packages/app/android/app/src/main/AndroidManifest.xml \
+            --ios-plist packages/app/ios/Runner/Info.plist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-build-evidence
+          path: build-evidence/
+          if-no-files-found: error
+          retention-days: 14

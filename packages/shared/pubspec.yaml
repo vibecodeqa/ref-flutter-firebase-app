@@ -1,0 +1,19 @@
+name: reference_shared
+description: "Product-neutral Dart models and policy helpers shared by the app and admin Flutter packages."
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ^3.11.5
+  flutter: ">=3.24.0"
+
+dependencies:
+  cloud_firestore: ^6.8.0
+  flutter:
+    sdk: flutter
+  meta: ^1.17.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

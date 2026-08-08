@@ -1,0 +1,104 @@
+rules_version = '2';
+
+// Firestore security rules for the flutter-firebase-app reference implementation.
+//
+// These rules are a deployable artifact, not documentation. They are:
+//   * unit-tested against the Firestore emulator (`firestore-tests/`),
+//   * a required, non-skippable CI gate, and
+//   * the only place where the client/server write boundary is actually enforced.
+//
+// Everything not matched below is denied: Firestore is default-deny, so there is
+// no catch-all `allow ... : if false` here (it would be a no-op).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function callerUid() {
+      return request.auth.uid;
+    }
+
+    // Admin is a custom claim minted server-side and stamped into the ID token.
+    // A client cannot set it; it can only present a token that already has it.
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+
+    // Fields only a Cloud Function (Admin SDK) may write.
+    // Kept in sync with NoteFieldPolicy.serverOnlyFields in packages/shared and
+    // with SERVER_ONLY_NOTE_FIELDS in packages/functions/src/policy.ts.
+    function serverOnlyNoteFields() {
+      return ['reviewState', 'reviewedBy', 'reviewedAt'];
+    }
+
+    function clientCreatableNoteFields() {
+      return ['ownerId', 'title', 'body', 'visibility', 'createdAt'];
+    }
+
+    function clientUpdatableNoteFields() {
+      return ['title', 'body', 'visibility'];
+    }
+
+    function noteShapeIsValid(data) {
+      return data.ownerId is string
+        && data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 200
+        && data.body is string
+        && data.body.size() <= 10000
+        && data.visibility in ['private', 'shared'];
+    }
+
+    match /notes/{noteId} {
+      // Owners read their own notes. Anyone signed in may read a note the owner
+      // explicitly shared. Admins may read everything so the moderation queue
+      // works — that is a claim check on the server, not a client-held key.
+      allow get, list: if isAdmin()
+        || (isSignedIn() && resource.data.ownerId == callerUid())
+        || (isSignedIn() && resource.data.visibility == 'shared');
+
+      // Creation: the caller must own the document it is creating, may send only
+      // client-writable fields, and may not smuggle in a server-owned field.
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == callerUid()
+        && request.resource.data.keys().hasOnly(clientCreatableNoteFields())
+        && !request.resource.data.keys().hasAny(serverOnlyNoteFields())
+        && noteShapeIsValid(request.resource.data);
+
+      // Update: owner only, and only the fields a client owns. Note that this
+      // holds for admins too — an admin moderating a note must go through the
+      // callable Cloud Function, which writes with the Admin SDK and therefore
+      // bypasses these rules by design.
+      allow update: if isSignedIn()
+        && resource.data.ownerId == callerUid()
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(clientUpdatableNoteFields())
+        && noteShapeIsValid(request.resource.data);
+
+      allow delete: if isSignedIn() && resource.data.ownerId == callerUid();
+    }
+
+    // Audit trail written by Cloud Functions only. Admins may read it; nobody
+    // may write it from a client, including admins.
+    match /moderationEvents/{eventId} {
+      allow get, list: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // Per-user profile documents.
+    match /users/{userId} {
+      allow get: if isAdmin() || (isSignedIn() && userId == callerUid());
+      allow list: if isAdmin();
+      allow create, update: if isSignedIn()
+        && userId == callerUid()
+        && request.resource.data.keys().hasOnly(['displayName', 'locale'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() <= 100;
+      allow delete: if false;
+    }
+  }
+}

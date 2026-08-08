@@ -1,0 +1,102 @@
+name: Deploy (gated — dry-run only in this reference repo)
+
+# THIS WORKFLOW NEVER DEPLOYS.
+#
+# It exists to demonstrate the *shape* a production deploy must have for a
+# Flutter + Firebase workspace:
+#
+#   * it can only be started deliberately (manual dispatch or a version tag),
+#     never by a push to a branch and never by a pull request;
+#   * every required gate — app, admin, shared, functions, Firestore rules,
+#     web build, Android build shape — must pass before the deploy job starts,
+#     and none of them is allowed to be non-blocking;
+#   * the deploy step itself is disabled (`if: ${{ false }}`) and no Firebase
+#     credential is configured anywhere in this repository.
+#
+# `scripts/check-deploy-shape.mjs` asserts all of the above on every CI run, so
+# the guarantee cannot be quietly removed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Firebase environment alias from .firebaserc
+        required: true
+        default: staging
+        type: choice
+        options: [staging, prod]
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Every required gate, reused verbatim from CI. A gate that only exists in a
+  # separate copy of the workflow is a gate that drifts.
+  gates:
+    name: Required gates
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  deploy:
+    name: Firebase deploy (dry-run / disabled)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [gates]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install workspace tooling
+        run: npm ci
+
+      - name: Re-assert the deploy shape immediately before deploying
+        run: npm run check:deploy-shape
+
+      - name: Show what a real deploy would target
+        env:
+          TARGET_ENV: ${{ inputs.environment || 'prod' }}
+        run: |
+          echo "Would deploy to alias: $TARGET_ENV"
+          echo "Hosting targets:"
+          node -e "const c=require('./firebase.json');console.log(c.hosting.map(h=>' - '+h.target+' <- '+h.public).join('\n'))"
+          echo "Functions source: $(node -e "console.log(require('./firebase.json').functions[0].source)")"
+          echo "Functions runtime: $(node -e "console.log(require('./firebase.json').functions[0].runtime)")"
+          echo "Firestore rules: $(node -e "console.log(require('./firebase.json').firestore.rules)")"
+          echo "Firestore indexes: $(node -e "console.log(require('./firebase.json').firestore.indexes)")"
+
+      # DISABLED ON PURPOSE. A fork that wants to deploy for real must:
+      #   1. put real project ids in .firebaserc,
+      #   2. add a Google Cloud Workload Identity Federation credential (preferred)
+      #      or a `FIREBASE_SERVICE_ACCOUNT` secret — never a long-lived CI token
+      #      committed to the repo,
+      #   3. add a protected GitHub Environment with required reviewers, and
+      #   4. delete the `if: ${{ false }}` below.
+      # Rules and indexes deploy BEFORE hosting/functions, so the database
+      # boundary is tightened before the code that relies on it goes live.
+      - name: firebase deploy (NEVER RUNS IN THIS REPOSITORY)
+        if: ${{ false }}
+        run: |
+          npx firebase deploy \
+            --only firestore:rules,firestore:indexes \
+            --project "${{ inputs.environment }}" \
+            --non-interactive
+          npx firebase deploy \
+            --only functions,hosting:app,hosting:admin \
+            --project "${{ inputs.environment }}" \
+            --non-interactive
+
+      - name: Record that no deployment happened
+        run: |
+          echo "No deployment was performed. This reference repository holds no"
+          echo "Firebase credentials and its deploy step is disabled."
