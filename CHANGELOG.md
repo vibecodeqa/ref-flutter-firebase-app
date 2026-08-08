@@ -31,6 +31,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `.github/workflows/ci.yml` with six required blocking gates and
   `.github/workflows/deploy.yml`, gated on those gates, whose deploy step is
   permanently disabled.
+- Vitest v8 coverage with thresholds on the policy module, and a `knip.json`
+  declaring the Cloud Functions entry point so dead-code analysis is meaningful.
 - `docs/vcqa-report.md` and `docs/build-evidence.md`.
 
 [Unreleased]: https://github.com/vibecodeqa/ref-flutter-firebase-app/compare/v0.1.0...HEAD

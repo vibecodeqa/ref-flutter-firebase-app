@@ -1,0 +1,18 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "$comment": [
+    "Dead-code analysis needs to be told where a Firebase workspace's entry points are.",
+    "packages/functions/src/index.ts is loaded by the Cloud Functions runtime, not by",
+    "any import in this repository, so an import-graph walk reports it as unused. The",
+    "root scripts/ are invoked by npm scripts and by CI, and firestore-tests/ is run by",
+    "the Firestore emulator harness."
+  ],
+  "entry": [
+    "scripts/*.mjs",
+    "firestore-tests/*.test.mjs",
+    "packages/functions/src/index.ts",
+    "packages/functions/vitest.config.ts"
+  ],
+  "project": ["scripts/**", "firestore-tests/**", "packages/functions/src/**"],
+  "ignoreDependencies": ["firebase-tools"]
+}

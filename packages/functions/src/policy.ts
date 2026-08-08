@@ -115,7 +115,8 @@ export function parseReviewRequest(data: unknown): ReviewRequest {
     : { noteId, reviewState, reason };
 }
 
-export function isReviewState(value: string): value is ReviewState {
+/** Internal narrowing helper for {@link parseReviewRequest}. */
+function isReviewState(value: string): value is ReviewState {
   return (REVIEW_STATES as readonly string[]).includes(value);
 }
 

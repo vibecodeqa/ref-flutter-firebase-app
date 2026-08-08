@@ -49,11 +49,15 @@ pubspec_overrides.yaml
 # ── Node ─────────────────────────────────────────────────────────────────────
 node_modules/
 packages/functions/lib/
+coverage/
 npm-debug.log*
 .eslintcache
 
 # ── Build evidence is produced by CI and uploaded as an artifact ─────────────
 build-evidence/
+
+# ── VibeCode QA scanner output; docs/vcqa-report.md is the tracked summary ────
+.vibe-check/
 
 # ── OS / editor ──────────────────────────────────────────────────────────────
 .DS_Store
